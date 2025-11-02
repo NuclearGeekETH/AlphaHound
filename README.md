@@ -20,9 +20,9 @@ Use this project at your own risk.
 This Python toolkit provides a robust, modern desktop GUI interface for controlling, acquiring, and logging gamma spectroscopy data using the [RadView Detection AlphaHound](https://www.radviewdetection.com/) device. The application supports live dose rate display, manual and automated gamma spectrum acquisition, dose rate logging, and timed spectrum acquisitions—bringing lab-grade usability to your PC, inspired by the official [web demo](https://www.radviewdetection.com/alphaview).
 
 **Key Features:**
-- Live dose rate display and logging (CSV export)
+- Live dose rate display and logging (CSV and N42 export)
 - Manual command entry
-- Gamma spectrum acquisition, display, and CSV export
+- Gamma spectrum acquisition, display, and CSV/N42 export
 - Timed spectrum (&quot;count time&quot;) data acquisition (with abort/resume)
 - Automated (&quot;Auto Gamma&quot;) spectrum polling
 - Full spectrum plotting (matplotlib)
@@ -71,7 +71,7 @@ python alphahound_gui.py
     - Download/clear gamma spectrum at any time
     - Perform **timed counts** (set minutes, start, and optionally abort/stop early)
     - Perform **automated periodic spectrum acquisition** (&quot;Auto Gamma View&quot;)
-    - Export dose and spectrum data as CSV files for further analysis
+    - Export dose and spectrum data as CSV or N42 files for further analysis
 5. All controls are mutually exclusive: only one spectrum acquisition mode active at a time (manual, timed, or auto).
 
 See the [AlphaView online demo](https://www.radviewdetection.com/alphaview) for command/response protocol inspiration.

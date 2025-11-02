@@ -6,6 +6,8 @@ from tkinter import ttk, messagebox, filedialog
 import time
 import csv
 import matplotlib
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
 
 matplotlib.use("TkAgg")
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -59,11 +61,14 @@ class GammaInterface:
 
         frame_dose = tk.Frame(self.master); frame_dose.pack(padx=8, pady=2, anchor='w')
         tk.Button(frame_dose, text="Download Dose Rate CSV", command=self.export_dose_csv).pack(side='left')
+        tk.Button(frame_dose, text="Download Dose Rate N42", command=self.export_dose_n42).pack(side='left')
         tk.Button(frame_dose, text="Clear Dose Data", command=self.clear_dose_history).pack(side='left', padx=6)
 
         frame_gamma = tk.Frame(self.master); frame_gamma.pack(padx=8, pady=6, anchor='w')
-        self.button_gamma = tk.Button(frame_gamma, text="Download Gamma Spec", command=self.manual_get_gamma)
+        self.button_gamma = tk.Button(frame_gamma, text="Download Gamma Spec (CSV)", command=self.manual_get_gamma)
         self.button_gamma.pack(side='left')
+        self.button_gamma_n42 = tk.Button(frame_gamma, text="Export Spectrum N42", command=self.export_gamma_n42)
+        self.button_gamma_n42.pack(side='left', padx=2)        
         self.button_clear_gamma = tk.Button(frame_gamma, text="Clear Gamma Spectrum", command=self.clear_spectrum)
         self.button_clear_gamma.pack(side='left', padx=4)
         self.button_auto_gamma = tk.Button(frame_gamma, text="Start Auto Gamma View", command=self.toggle_auto_gamma)
@@ -245,6 +250,25 @@ class GammaInterface:
                 w.writerow([row['time'], row['dose']])
         messagebox.showinfo("Dose Rate Data", f"CSV saved: {filename}")
 
+    def export_dose_n42(self):
+        if not self.dose_history:
+            messagebox.showinfo("Dose Rate Data", "No dose data to export.")
+            return
+        filename = filedialog.asksaveasfilename(defaultextension='.n42',
+                                        filetypes=[("N42 XML Files", "*.n42")],
+                                        title="Save Dose Rate N42")
+        if not filename: return
+
+        root = ET.Element('RadiologicalMeasurements', {'xmlns':"http://physics.nist.gov/N42/2006/N42"})
+        for row in self.dose_history:
+            meas = ET.SubElement(root, "Measurement")
+            ET.SubElement(meas, "Time").text = row['time']
+            ET.SubElement(meas, "DoseRate").text = str(row['dose'])
+
+        tree = ET.ElementTree(root)
+        tree.write(filename, encoding="utf-8", xml_declaration=True)
+        messagebox.showinfo("Dose Rate Data", f"N42 XML saved: {filename}")
+
     #========== SPECTRUM ACQUISITION MUTEX LOGIC ==========
 
     def manual_get_gamma(self):
@@ -263,6 +287,7 @@ class GammaInterface:
         self.gamma_manual_get = False
         self.status_var.set("Status: Manual spectrum collected, saving CSV...")
         self.export_gamma_csv()
+        self.export_gamma_n42()
         self._enable_normal_ops()
         self.button_clear_gamma.config(state='normal')
 
@@ -371,6 +396,7 @@ class GammaInterface:
         self.button_stop_time.config(state='disabled')
         self.status_var.set("Status: Timed spectrum collected, saving CSV...")
         self.export_gamma_csv()
+        self.export_gamma_n42()
         self._enable_normal_ops()
 
     #========== END MUTEX LOGIC ==========
@@ -397,6 +423,81 @@ class GammaInterface:
                     w.writerow([count])
         messagebox.showinfo("Export", f"CSV saved: {filename}")
 
+    def export_gamma_n42(self):
+        if not self.spectrum:
+            messagebox.showinfo("No Data", "No gamma spectrum data available.")
+            return
+
+        filename = filedialog.asksaveasfilename(defaultextension='.n42',
+                                        filetypes=[("N42 XML Files", "*.n42")],
+                                        title="Save Gamma Spectrum N42")
+        if not filename: return
+
+        spectrum_counts = [int(count) for count, energy in self.spectrum]
+        energies = [float(energy) for count, energy in self.spectrum]
+        n_channels = len(spectrum_counts)
+        # Simple linear calibration: E = A + B*Ch
+        if n_channels >= 2:
+            A = energies[0]
+            B = (energies[-1] - energies[0]) / (n_channels - 1)
+        else:
+            A = 0.0
+            B = 1.0
+
+        ns = "http://physics.nist.gov/N42/2006/N42"
+        NSMAP = {'': ns}
+        ET.register_namespace('', ns)
+
+        # Build document tree
+        root = ET.Element('RadiologicalInstrumentData', {'xmlns': ns})
+
+        # Required Identification/Header
+        id_header = ET.SubElement(root, "MeasurementGroup")
+        id_block = ET.SubElement(id_header, "Measurement")
+
+        spectrum = ET.SubElement(id_block, "Spectrum")
+
+        # Simple, static instrument details
+        acq = ET.SubElement(spectrum, "InstrumentInformation")
+        mn = ET.SubElement(acq, "Manufacturer")
+        mn.text = "AlphaHound"
+        md = ET.SubElement(acq, "Model")
+        md.text = "ALPHAHOUND"
+        sn = ET.SubElement(acq, "SerialNumber")
+        sn.text = "001"
+
+        # Energy calibration
+        energy_cal = ET.SubElement(spectrum, "EnergyCalibration")
+        cal_fit = ET.SubElement(energy_cal, "CalibrationEquation")
+        cal_fit.text = "Linear"
+        cal_a = ET.SubElement(energy_cal, "CalibrationCoefficient", 
+                        {'CoefficientNumber':'0'})
+        cal_a.text = str(A)
+        cal_b = ET.SubElement(energy_cal, "CalibrationCoefficient", 
+                        {'CoefficientNumber':'1'})
+        cal_b.text = str(B)
+
+        # Channel data
+        channeldata = ET.SubElement(spectrum, "ChannelData")
+        channeldata.set("NumberOfChannels", str(n_channels))
+        channeldata.text = " ".join(str(int(c)) for c in spectrum_counts)
+
+        # Optional live time, real time, start time...
+        spectrum_time = ET.SubElement(spectrum, "LiveTime")
+        spectrum_time.text = "1.0" # placeholder
+
+        # Add SpectrumType
+        sptype = ET.SubElement(spectrum, "SpectrumType")
+        sptype.text = "PHA"
+
+        # Pretty print output (optional)
+        xmlstr = minidom.parseString(ET.tostring(root)).toprettyxml(indent="  ")
+
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(xmlstr)
+
+        messagebox.showinfo("Export", f"N42 XML saved: {filename}")
+    
     def _draw_spectrum(self):
         self.ax.cla()
         self.ax.set_xlabel("Channel")
