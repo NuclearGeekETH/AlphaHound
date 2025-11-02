@@ -144,6 +144,7 @@ class GammaInterface:
     def _disable_during_operation(self, spectrum=True, auto=True, timed=True):
         if spectrum:
             self.button_gamma.config(state='disabled')
+            self.button_gamma_n42.config(state='disabled')
         if auto:
             self.button_auto_gamma.config(state='disabled')
         if timed:
@@ -152,6 +153,7 @@ class GammaInterface:
 
     def _enable_normal_ops(self):
         self.button_gamma.config(state='normal')
+        self.button_gamma_n42.config(state='normal')
         self.button_auto_gamma.config(state='normal')
         self.button_start_time.config(state='normal')
         self.entry_time.config(state='normal')
