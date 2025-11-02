@@ -96,7 +96,7 @@ class GammaInterface:
         tk.Button(frame_cmd, text="Send Data", command=self.send_custom_command).pack(side='left', padx=3)
 
         frame_plot = tk.Frame(self.master); frame_plot.pack(fill='x', padx=12, pady=8, expand=True)
-        self.fig = Figure(figsize=(7, 3), dpi=90)
+        self.fig = Figure(figsize=(7, 5), dpi=90)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel("Channel"); self.ax.set_ylabel("Count"); self.ax.set_title("Gamma Spectrum")
         self.canvas = FigureCanvasTkAgg(self.fig, master=frame_plot)
