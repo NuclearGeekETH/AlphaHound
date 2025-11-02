@@ -90,6 +90,7 @@ This repository is released under the MIT License. See [LICENSE](LICENSE) for de
 
 - Code developed and maintained by [NuclearGeekETH](https://github.com/NuclearGeekETH)
 - Device and web system by [RadView Detection](https://www.radviewdetection.com/)
+- Special Thank You to Nick Conner at [RadView Detection](https://www.radviewdetection.com/) for creating such an awesome device!
 - Web interface inspiration: [AlphaView](https://www.radviewdetection.com/alphaview)
 
 ---
