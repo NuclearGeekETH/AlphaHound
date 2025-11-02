@@ -61,7 +61,7 @@ class GammaInterface:
 
         frame_dose = tk.Frame(self.master); frame_dose.pack(padx=8, pady=2, anchor='w')
         tk.Button(frame_dose, text="Download Dose Rate CSV", command=self.export_dose_csv).pack(side='left')
-        tk.Button(frame_dose, text="Download Dose Rate N42", command=self.export_dose_n42).pack(side='left')
+        # tk.Button(frame_dose, text="Download Dose Rate N42", command=self.export_dose_n42).pack(side='left')
         tk.Button(frame_dose, text="Clear Dose Data", command=self.clear_dose_history).pack(side='left', padx=6)
 
         frame_gamma = tk.Frame(self.master); frame_gamma.pack(padx=8, pady=6, anchor='w')
@@ -252,24 +252,24 @@ class GammaInterface:
                 w.writerow([row['time'], row['dose']])
         messagebox.showinfo("Dose Rate Data", f"CSV saved: {filename}")
 
-    def export_dose_n42(self):
-        if not self.dose_history:
-            messagebox.showinfo("Dose Rate Data", "No dose data to export.")
-            return
-        filename = filedialog.asksaveasfilename(defaultextension='.n42',
-                                        filetypes=[("N42 XML Files", "*.n42")],
-                                        title="Save Dose Rate N42")
-        if not filename: return
+    # def export_dose_n42(self):
+    #     if not self.dose_history:
+    #         messagebox.showinfo("Dose Rate Data", "No dose data to export.")
+    #         return
+    #     filename = filedialog.asksaveasfilename(defaultextension='.n42',
+    #                                     filetypes=[("N42 XML Files", "*.n42")],
+    #                                     title="Save Dose Rate N42")
+    #     if not filename: return
 
-        root = ET.Element('RadiologicalMeasurements', {'xmlns':"http://physics.nist.gov/N42/2006/N42"})
-        for row in self.dose_history:
-            meas = ET.SubElement(root, "Measurement")
-            ET.SubElement(meas, "Time").text = row['time']
-            ET.SubElement(meas, "DoseRate").text = str(row['dose'])
+    #     root = ET.Element('RadiologicalMeasurements', {'xmlns':"http://physics.nist.gov/N42/2006/N42"})
+    #     for row in self.dose_history:
+    #         meas = ET.SubElement(root, "Measurement")
+    #         ET.SubElement(meas, "Time").text = row['time']
+    #         ET.SubElement(meas, "DoseRate").text = str(row['dose'])
 
-        tree = ET.ElementTree(root)
-        tree.write(filename, encoding="utf-8", xml_declaration=True)
-        messagebox.showinfo("Dose Rate Data", f"N42 XML saved: {filename}")
+    #     tree = ET.ElementTree(root)
+    #     tree.write(filename, encoding="utf-8", xml_declaration=True)
+    #     messagebox.showinfo("Dose Rate Data", f"N42 XML saved: {filename}")
 
     #========== SPECTRUM ACQUISITION MUTEX LOGIC ==========
 
