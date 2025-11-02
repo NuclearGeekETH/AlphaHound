@@ -431,75 +431,54 @@ class GammaInterface:
             return
 
         filename = filedialog.asksaveasfilename(defaultextension='.n42',
-                                        filetypes=[("N42 XML Files", "*.n42")],
-                                        title="Save Gamma Spectrum N42")
+                                                filetypes=[("N42 XML Files", "*.n42")],
+                                                title="Save Gamma Spectrum N42")
         if not filename: return
 
         spectrum_counts = [int(count) for count, energy in self.spectrum]
         energies = [float(energy) for count, energy in self.spectrum]
         n_channels = len(spectrum_counts)
-        # Simple linear calibration: E = A + B*Ch
-        if n_channels >= 2:
-            A = energies[0]
-            B = (energies[-1] - energies[0]) / (n_channels - 1)
-        else:
-            A = 0.0
-            B = 1.0
 
         ns = "http://physics.nist.gov/N42/2006/N42"
-        NSMAP = {'': ns}
         ET.register_namespace('', ns)
 
-        # Build document tree
         root = ET.Element('RadiologicalInstrumentData', {'xmlns': ns})
 
-        # Required Identification/Header
-        id_header = ET.SubElement(root, "MeasurementGroup")
-        id_block = ET.SubElement(id_header, "Measurement")
+        # Header/Instrument info
+        group = ET.SubElement(root, "MeasurementGroup")
+        measurement = ET.SubElement(group, "Measurement")
+        spectrum = ET.SubElement(measurement, "Spectrum")
 
-        spectrum = ET.SubElement(id_block, "Spectrum")
-
-        # Simple, static instrument details
-        acq = ET.SubElement(spectrum, "InstrumentInformation")
-        mn = ET.SubElement(acq, "Manufacturer")
+        instrument = ET.SubElement(spectrum, "InstrumentInformation")
+        mn = ET.SubElement(instrument, "Manufacturer")
         mn.text = "AlphaHound"
-        md = ET.SubElement(acq, "Model")
+        md = ET.SubElement(instrument, "Model")
         md.text = "ALPHAHOUND"
-        sn = ET.SubElement(acq, "SerialNumber")
+        sn = ET.SubElement(instrument, "SerialNumber")
         sn.text = "001"
 
-        # Energy calibration
+        # EnergyCalibration: full array
         energy_cal = ET.SubElement(spectrum, "EnergyCalibration")
         cal_fit = ET.SubElement(energy_cal, "CalibrationEquation")
-        cal_fit.text = "Linear"
-        cal_a = ET.SubElement(energy_cal, "CalibrationCoefficient", 
-                        {'CoefficientNumber':'0'})
-        cal_a.text = str(A)
-        cal_b = ET.SubElement(energy_cal, "CalibrationCoefficient", 
-                        {'CoefficientNumber':'1'})
-        cal_b.text = str(B)
+        cal_fit.text = "List"
+        channel_energies = ET.SubElement(energy_cal, "ChannelEnergies")
+        channel_energies.text = " ".join(f"{e:.5f}" for e in energies)
 
-        # Channel data
-        channeldata = ET.SubElement(spectrum, "ChannelData")
-        channeldata.set("NumberOfChannels", str(n_channels))
+        # ChannelData
+        channeldata = ET.SubElement(spectrum, "ChannelData", NumberOfChannels=str(n_channels))
         channeldata.text = " ".join(str(int(c)) for c in spectrum_counts)
 
-        # Optional live time, real time, start time...
+        # Optional meta
         spectrum_time = ET.SubElement(spectrum, "LiveTime")
-        spectrum_time.text = "1.0" # placeholder
-
-        # Add SpectrumType
+        spectrum_time.text = "1.0"
         sptype = ET.SubElement(spectrum, "SpectrumType")
         sptype.text = "PHA"
 
-        # Pretty print output (optional)
         xmlstr = minidom.parseString(ET.tostring(root)).toprettyxml(indent="  ")
-
         with open(filename, "w", encoding="utf-8") as f:
             f.write(xmlstr)
-
         messagebox.showinfo("Export", f"N42 XML saved: {filename}")
-    
+
     def _draw_spectrum(self):
         self.ax.cla()
         self.ax.set_xlabel("Channel")
