@@ -3,6 +3,12 @@
 
 ![RadView Detection Logo](https://www.radviewdetection.com/favicon.ico)
 
+**Disclaimer**  
+This project is an independent, third-party, open-source interface created by [NuclearGeekETH](https://github.com/NuclearGeekETH).  
+I am **not affiliated with** or endorsed by RadView Detection or the makers of AlphaHound™ in any way.  
+"AlphaHound™" is a trademark of its respective owners.  
+Use this project at your own risk.
+
 **Author:** [NuclearGeekETH](https://github.com/NuclearGeekETH)  
 **Device:** [AlphaHound - RadView Detection](https://www.radviewdetection.com/)  
 **Gamma Spectrum Reference:** [AlphaView - Gamma Spectroscopy Web Demo](https://www.radviewdetection.com/alphaview)
@@ -83,6 +89,13 @@ See the [AlphaView online demo](https://www.radviewdetection.com/alphaview) for 
 ## License
 
 This repository is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## Trademark Notice
+
+AlphaHound™, RadView Detection, and all associated logos and marks are trademarks or registered trademarks of their respective holders.  
+This project is not affiliated with, endorsed by, or sponsored by RadView Detection.
 
 ---
 
