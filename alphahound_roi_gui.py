@@ -696,24 +696,21 @@ class GammaInterface:
         self.status_var.set("ROI highlight cleared from plot.")
 
     def _draw_spectrum(self, redraw=True):
-        """
-        Draws the current spectrum, with x-axis as energy in keV, not channel.
-        All overlays and ROIs work as before.
-        """
+        """Redraw spectrum, wiping any ROI highlight. If redraw is False, keeps the last plot as-is (for overlays)."""
         if redraw:
             self.ax.cla()
-            self.ax.set_xlabel("Energy (keV)")
+            self.ax.set_xlabel("Channel")
             self.ax.set_ylabel("Count")
             self.ax.set_title("Gamma Spectrum")
         if self.spectrum:
-            energies = [energy for count, energy in self.spectrum]
+            channels = list(range(len(self.spectrum)))
             counts = [count for count, energy in self.spectrum]
-            self.ax.bar(energies, counts, color='black', alpha=0.6, width=(energies[1]-energies[0] if len(energies)>1 else 1))
+            self.ax.bar(channels, counts, color='black', alpha=0.6, width=1.0)
         self.canvas.draw()
 
     def _draw_blank_spectrum(self):
         self.ax.cla()
-        self.ax.set_xlabel("Energy (keV)")
+        self.ax.set_xlabel("Channel")
         self.ax.set_ylabel("Count")
         self.ax.set_title("Gamma Spectrum")
         self.canvas.draw()
