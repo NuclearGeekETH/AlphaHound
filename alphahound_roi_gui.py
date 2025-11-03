@@ -381,56 +381,6 @@ class GammaInterface:
         self._draw_blank_spectrum()
         self.status_var.set("Status: Clear command sent (W)")
 
-    #========== ROI LOGIC ==========
-    def _analyze_all_rois(self):
-        if not self.spectrum or len(self.spectrum) == 0:
-            for v in self.roi_results_vars:
-                v.set("")
-            return
-
-        energies = [energy for count, energy in self.spectrum]
-        counts = [count for count, energy in self.spectrum]
-
-        # For each ROI:
-        for idx, roi in enumerate(self.rois):
-            roi_min, roi_max = roi['energy_min'], roi['energy_max']
-            eff, br = roi['efficiency'], roi['gamma_abundance']
-            label = roi["label"]
-
-            roi_indices = [i for i, e in enumerate(energies) if roi_min <= e <= roi_max]
-            if not roi_indices:
-                self.roi_results_vars[idx].set(f"{label}: No channels in ROI.")
-                continue
-            net_counts = sum([counts[i] for i in roi_indices])
-            live_time = float(self.entry_time.get())    # If you have actual measurement time per spectrum, use it here!
-
-            activity_bq = net_counts / (live_time * eff * br) if eff * br != 0 else 0
-            activity_ci = activity_bq / 3.7e10
-
-            if activity_ci < 1e-3:
-                activity_scaled = activity_ci * 1e6
-                activity_unit = 'μCi'
-            elif activity_ci < 1:
-                activity_scaled = activity_ci * 1e3
-                activity_unit = 'mCi'
-            else:
-                activity_scaled = activity_ci
-                activity_unit = 'Ci'
-
-            # For U-235, add qualitative interpretation
-            if "U-235" in label:
-                # Very basic: If >5 counts in ROI it is likely present (for real use do stats/confidence)
-                presence = "Present" if net_counts > 5 else "Absent/Weak"
-                interpretation = " (Natural uranium likely)" if presence == "Present" else " (Depleted uranium likely)"
-                self.roi_results_vars[idx].set(
-                    f'{label}: Counts: {int(net_counts)}, Activity: {activity_bq:.1f} Bq, '
-                    f'{activity_scaled:.3g} {activity_unit} — 186 keV: {presence}{interpretation}'
-                )
-            else:
-                self.roi_results_vars[idx].set(
-                    f'{label}: Counts: {int(net_counts)}, Activity: {activity_bq:.1f} Bq, {activity_scaled:.3g} {activity_unit}'
-                )
-
     #========== AUTO GAMMA MUTEX LOGIC ==========
     def toggle_auto_gamma(self):
         if not self.serial_conn:
@@ -642,7 +592,7 @@ class GammaInterface:
         else:
             self.roi_result_var.set("Invalid ROI selection.")
             return
-        # ROI properties
+
         roi_min, roi_max = roi['energy_min'], roi['energy_max']
         eff, br = roi['efficiency'], roi['gamma_abundance']
         label = roi["label"]
@@ -653,7 +603,8 @@ class GammaInterface:
             self.roi_result_var.set(f"{label}: No spectrum channels in ROI ({roi_min}-{roi_max} keV)")
             return
         net_counts = sum([counts[i] for i in roi_indices])
-        # If user ran a timed count, use that for live_time, else 1.0 s
+
+        # Compute activity (business as usual)
         try:
             live_time = float(self.entry_time.get())
             if live_time <= 0: live_time = 1.0
@@ -661,7 +612,6 @@ class GammaInterface:
             live_time = 1.0
         activity_bq = net_counts / (live_time * eff * br) if eff*br > 0 else 0
         activity_ci = activity_bq / 3.7e10
-        # Smart scaling
         if activity_ci < 1e-3:
             activity_scaled = activity_ci * 1e6
             activity_unit = 'μCi'
@@ -672,13 +622,33 @@ class GammaInterface:
             activity_scaled = activity_ci
             activity_unit = 'Ci'
 
-        # Special: U-235 qualitative result
-        if "U-235" in label:
-            presence = "Present" if net_counts > 5 else "Absent/Weak"
-            interpretation = " (Natural uranium likely)" if presence == "Present" else " (Depleted uranium likely)"
+        # --------- 186 keV logic with ratio metric ----------
+        if "U-235" in label or "186" in label:
+            # Find the max single ROI-width sum anywhere in spectrum
+            # (Use a moving sum of window of same size as 186 keV ROI)
+            window_size = len(roi_indices)
+            # Roll a window the size of the 186keV ROI across all channels
+            max_peak_counts = 0
+            for start in range(0, len(counts) - window_size + 1):
+                peak_sum = sum(counts[start:start + window_size])
+                if peak_sum > max_peak_counts:
+                    max_peak_counts = peak_sum
+
+            if max_peak_counts == 0:
+                significance = 0
+            else:
+                significance = net_counts / max_peak_counts
+
+            # Decision rule: ≥0.3 of major peak == “natural uranium likely”
+            threshold = 0.3
+            if significance >= threshold:
+                verdict = f"186 keV counts are {significance:.2%} of largest peak (≥{int(threshold*100)}%): Natural uranium likely"
+            else:
+                verdict = f"186 keV counts are only {significance:.2%} of largest peak (<{int(threshold*100)}%): Depleted uranium likely"
+
             self.roi_result_var.set(
                 f"{label}: Counts {int(net_counts)}, Activity: {activity_bq:.1f} Bq, "
-                f"{activity_scaled:.3g} {activity_unit} — 186 keV: {presence}{interpretation}"
+                f"{activity_scaled:.3g} {activity_unit}\n{verdict}"
             )
         else:
             self.roi_result_var.set(
