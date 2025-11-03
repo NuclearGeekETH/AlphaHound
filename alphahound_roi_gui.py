@@ -39,6 +39,10 @@ class GammaInterface:
         self.timed_acquire_thread = None
         self.timed_value = 0
 
+        self.timed_spectrum_update_active = False
+        self.timed_spectrum_update_thread = None
+        self.waiting_for_final_timed_spectrum = False
+
         self.gamma_auto_running = False
         self.gamma_auto_thread = None
 
@@ -262,17 +266,16 @@ class GammaInterface:
                             if len(spectrum_tmp) >= 1024:
                                 self.spectrum = spectrum_tmp.copy()
                                 self._draw_spectrum()
-                                # Handle spectrum ending:
                                 if self.timed_acquire_active:
-                                    self.master.after(0, self.timed_count_completed)
+                                    if getattr(self, "waiting_for_final_timed_spectrum", False):
+                                        self.waiting_for_final_timed_spectrum = False
+                                        self.master.after(0, self.timed_count_completed)
+                                    # else: this was just a live auto-update during timed count; do nothing extra
                                 elif self.gamma_auto_running:
-                                    # Just update plot, nothing to do.
                                     pass
                                 elif self.gamma_manual_get:
                                     self.master.after(0, self.manual_gamma_completed)
-                                else:
-                                    # Shouldn't happen, just show exported spectrum
-                                    pass
+                                # else: show exported/collected spectrum
                                 expecting_spectrum = False
                         elif expecting_spectrum and not line:
                             continue
@@ -487,39 +490,48 @@ class GammaInterface:
         self.timed_value = minutes
         self.timed_acquire_active = True
         self.timed_acquire_abort.clear()
+        self.waiting_for_final_timed_spectrum = False
+        self.timed_spectrum_update_active = True
         self._disable_during_operation(spectrum=True, auto=True, timed=True)
         self.button_stop_time.config(state='normal')
         self.label_timer.config(text=f"Time remaining: {int(minutes):02d}:00")
         self.status_var.set(f"Status: Timed count running for {minutes} min...")
+
         self.timed_acquire_thread = threading.Thread(target=self.timed_count_thread, args=(minutes,), daemon=True)
+        self.timed_spectrum_update_thread = threading.Thread(target=self.timed_spectrum_live_update_loop, daemon=True)
         self.timed_acquire_thread.start()
+        self.timed_spectrum_update_thread.start()
 
     def timed_count_thread(self, minutes):
-        total_secs = int(minutes*60)
-        self.clear_spectrum
-        for t in range(total_secs,0,-1):
+        total_secs = int(minutes * 60)
+        self.clear_spectrum()
+        for t in range(total_secs, 0, -1):
             if self.timed_acquire_abort.is_set():
                 self.master.after(0, self.label_timer.config, {"text": " "})
                 self.master.after(0, self.status_var.set, "Status: Abort: acquiring spectrum...")
+                self.waiting_for_final_timed_spectrum = True
                 self._serial_write(b'G')
                 return
-            self.master.after(0, self.label_timer.config, {"text":f"Time remaining: {t//60:02d}:{t%60:02d}"})
+            self.master.after(0, self.label_timer.config, {"text": f"Time remaining: {t // 60:02d}:{t % 60:02d}"})
             time.sleep(1)
         self.master.after(0, self.label_timer.config, {"text": " "})
         if not self.timed_acquire_abort.is_set():
             self.master.after(0, self.status_var.set, "Status: Timed count finished, acquiring spectrum...")
+            self.waiting_for_final_timed_spectrum = True
             self._serial_write(b'G')
 
     def abort_timed_count(self, forced=False):
+        self.timed_spectrum_update_active = False
         if self.timed_acquire_active:
             self.timed_acquire_abort.set()
             if not forced:
                 self.label_timer.config(text=" ")
                 self.status_var.set("Status: Stopping timed count, please wait for gamma spectrum...")
-                self.button_stop_time.config(state='disabled') # The real UI reset is in timed_count_completed
+                self.button_stop_time.config(state='disabled')
 
     def timed_count_completed(self):
         self.timed_acquire_active = False
+        self.timed_spectrum_update_active = False
         self.timed_acquire_abort.clear()
         self.label_timer.config(text=" ")
         self.button_stop_time.config(state='disabled')
@@ -527,6 +539,19 @@ class GammaInterface:
         self.export_gamma_csv()
         self.export_gamma_n42()
         self._enable_normal_ops()
+
+    def timed_spectrum_live_update_loop(self):
+        while self.timed_spectrum_update_active and self.serial_conn and self.timed_acquire_active:
+            try:
+                # Only send an auto-update if not waiting for the final at end
+                if not self.gamma_manual_get and not self.waiting_for_final_timed_spectrum:
+                    self._serial_write(b"G")
+            except Exception:
+                pass
+            for _ in range(10):
+                if not self.timed_spectrum_update_active or not self.timed_acquire_active:
+                    break
+                time.sleep(0.1)
 
     #========== END MUTEX LOGIC ==========
 
