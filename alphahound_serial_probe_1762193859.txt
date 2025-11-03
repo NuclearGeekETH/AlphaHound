@@ -1,0 +1,98 @@
+
+-----[AUTO PROBE 2025-11-03 13:18:29]-----
+
+CMD: G
+   Full 1024-int Array received:
+   Temp:24.87
+   CompFactor:0.95778
+   Comp
+   0,10.00
+   0,11.77
+   0,13.55
+   1,15.33
+   1,17.12
+   ...
+   0,7452.68
+   0,7469.51
+
+CMD: A
+
+CMD: B
+
+CMD: D
+   17.35
+
+CMD: DA
+   8.17
+
+CMD: DB
+   8.58
+
+CMD: RA
+
+CMD: RB
+
+CMD: GA
+   Full 1024-int Array received:
+   Temp:25.00
+   CompFactor:0.95756
+   Comp
+   0,10.00
+   0,11.77
+   0,13.55
+   1,15.33
+   1,17.12
+   ...
+   0,7452.68
+   0,7469.51
+
+CMD: GB
+   Full 1024-int Array received:
+   Temp:25.00
+   CompFactor:0.95756
+   Comp
+   0,10.00
+   0,11.77
+   0,13.55
+   1,15.33
+   1,17.12
+   ...
+   0,7452.68
+   0,7469.51
+
+CMD: SpecA
+   Raw input received: 'cA' (length: 2)
+   After trim: 'cA'
+   After removing 'C': 'A'
+   Parsed coefficients:
+   Coefficient 0: 0.0000000000
+   Coefficient 1: 0.0000000000
+   Coefficient 2: 0.0000000000
+   Coefficient 3: 0.0000000000
+   Skipping calibration - first two coefficients are zero
+
+CMD: SpecB
+   Raw input received: 'cB' (length: 2)
+   After trim: 'cB'
+   After removing 'C': 'B'
+   Parsed coefficients:
+   Coefficient 0: 0.0000000000
+   Coefficient 1: 0.0000000000
+   Coefficient 2: 0.0000000000
+   Coefficient 3: 0.0000000000
+   Skipping calibration - first two coefficients are zero
+
+CMD: COUNT
+   Raw input received: 'COUNT' (length: 5)
+   After trim: 'COUNT'
+   After removing 'C': 'OUNT'
+   Parsed coefficients:
+   Coefficient 0: 0.0000000000
+   Coefficient 1: 0.0000000000
+   Coefficient 2: 0.0000000000
+   Coefficient 3: 0.0000000000
+   Skipping calibration - first two coefficients are zero
+
+CMD: ALL
+
+CMD: ?

@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
 matplotlib.use("TkAgg")
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 
 class GammaInterface:
@@ -22,6 +22,7 @@ class GammaInterface:
         self.status_var = tk.StringVar(value="Status: Not Connected")
         self.dose_var = tk.StringVar(value="Dose Rate: N/A uRem")
         self.avg_var = tk.StringVar(value="Dose Average: N/A uRem")
+        self.hover_var = tk.StringVar(value="")
 
         self.serial_thread = None
         self.serial_stop = threading.Event()
@@ -41,10 +42,31 @@ class GammaInterface:
         self.gamma_auto_running = False
         self.gamma_auto_thread = None
 
-        self.cs137_roi = (650, 675)  # keV
-        self.cs137_efficiency = 0.10  # 10% (per your note, set proper value if available)
-        self.cs137_gamma_abundance = 0.85  # 85% gamma emission probability (branching ratio)
-        self.cs137_results_var = StringVar(value="")
+        self.rois = [
+            {
+                "label": "Cs-137",
+                "energy_min": 650,
+                "energy_max": 675,
+                "efficiency": 0.10,
+                "gamma_abundance": 0.85,
+            },
+            {
+                "label": "Ra-226 (609 keV Pb-214)",
+                "energy_min": 600,
+                "energy_max": 620,
+                "efficiency": 0.10,  # update to real efficiency if known
+                "gamma_abundance": 0.46,
+            },
+            {
+                "label": "U-235 (186 keV)",
+                "energy_min": 185,
+                "energy_max": 187,
+                "efficiency": 0.10,  # update to real efficiency if known
+                "gamma_abundance": 0.57,  # 57.2% for 185.7 keV
+            }
+        ]
+
+        self.roi_results_vars = [tk.StringVar(value="") for _ in self.rois]
 
         self._setup_ui()
         self._populate_com_ports()
@@ -107,15 +129,55 @@ class GammaInterface:
         self.ax.set_xlabel("Channel"); self.ax.set_ylabel("Count"); self.ax.set_title("Gamma Spectrum")
         self.canvas = FigureCanvasTkAgg(self.fig, master=frame_plot)
         self.canvas.get_tk_widget().pack(fill='x', expand=True)
+        self.toolbar = NavigationToolbar2Tk(self.canvas, frame_plot)
+        self.toolbar.update()
+        self.canvas.get_tk_widget().pack(fill='x', expand=True)        
         self._draw_blank_spectrum()
 
-        frame_roi = tk.Frame(self.master)
-        frame_roi.pack(fill='x', padx=12, pady=4)
-        lbl = tk.Label(frame_roi, text="Cs-137 ROI (gamma 661.7 keV):", font=('TkDefaultFont', 10, 'bold'))
-        lbl.pack(side='left')
-        self.label_cs137_counts = tk.Label(frame_roi, textvariable=self.cs137_results_var, fg='blue')
-        self.label_cs137_counts.pack(side='left', padx=8)
-        tk.Button(frame_roi, text="Show ROI on Plot", command=self.show_cs137_roi_overlay).pack(side='left')
+        frame_hover = tk.Frame(self.master)
+        frame_hover.pack(fill='x', padx=14, pady=(0,2))
+        tk.Label(frame_hover, textvariable=self.hover_var, fg='darkgreen').pack(anchor='w')
+
+        self.canvas.mpl_connect("motion_notify_event", self._on_mouse_move)
+
+        # -------- New ROI Panel --------
+        frame_roi = tk.LabelFrame(self.master, text="Region-of-Interest (ROI) Analysis", padx=8, pady=4)
+        frame_roi.pack(fill='x', padx=14, pady=(8,4), expand=False)
+
+        tk.Label(frame_roi, text="Isotope:").grid(row=0, column=0, sticky='e')
+        self.selected_roi = tk.StringVar(value=self.rois[0]["label"])
+        roi_labels = [roi["label"] for roi in self.rois]
+        self.roi_dropdown = ttk.Combobox(
+            frame_roi, values=roi_labels, state="readonly", width=26,
+            textvariable=self.selected_roi
+        )
+        self.roi_dropdown.grid(row=0, column=1, padx=2, sticky='w')
+
+        self.btn_calc_roi = tk.Button(frame_roi, text="Calculate ROI", command=self.analyze_selected_roi)
+        self.btn_calc_roi.grid(row=0, column=2, padx=6)
+
+        self.btn_show_roi = tk.Button(frame_roi, text="Show ROI on Plot", command=self.show_selected_roi)
+        self.btn_show_roi.grid(row=0, column=3, padx=3)
+
+        self.btn_clear_roi = tk.Button(frame_roi, text="Clear ROI Highlight", command=self.clear_roi_highlight)
+        self.btn_clear_roi.grid(row=0, column=4, padx=3)
+
+        self.roi_result_var = tk.StringVar(value="")
+        self.roi_result_label = tk.Label(frame_roi, textvariable=self.roi_result_var, fg='blue')
+        self.roi_result_label.grid(row=1, column=0, columnspan=5, sticky='w', pady=(6,2))
+
+    def _on_mouse_move(self, event):
+        if event.inaxes == self.ax and self.spectrum:
+            # Find the nearest integer channel
+            channel = int(round(event.xdata))
+            if 0 <= channel < len(self.spectrum):
+                count, energy = self.spectrum[channel]
+                txt = f"Channel: {channel}   Count: {int(count)}   Energy: {energy:.1f} keV"
+            else:
+                txt = ""
+        else:
+            txt = ""
+        self.hover_var.set(txt)
 
     def _populate_com_ports(self):
         ports = [port.device for port in serial.tools.list_ports.comports()]
@@ -317,70 +379,54 @@ class GammaInterface:
         self.status_var.set("Status: Clear command sent (W)")
 
     #========== ROI LOGIC ==========
-    # --- New: Cs-137 ROI analysis ---
-    def _analyze_cs137_roi(self):
-        # If not enough data/energy calibration, don't proceed
+    def _analyze_all_rois(self):
         if not self.spectrum or len(self.spectrum) == 0:
-            self.cs137_results_var.set("")
+            for v in self.roi_results_vars:
+                v.set("")
             return
-        # Extract energies from spectrum
+
         energies = [energy for count, energy in self.spectrum]
         counts = [count for count, energy in self.spectrum]
-        # Find indices in ROI
-        roi_min, roi_max = self.cs137_roi
-        roi_indices = [i for i, e in enumerate(energies) if roi_min <= e <= roi_max]
-        if not roi_indices:
-            self.cs137_results_var.set("No channels in ROI.")
-            return
-        # Integrate counts in ROI
-        net_counts = sum([counts[i] for i in roi_indices])
-        # Live time: For now, 1s unless you track otherwise
-        # (Use actual acquisition time if available)
-        live_time = float(self.entry_time.get())
-        # Efficiency & gamma abundance
-        eff = self.cs137_efficiency
-        br = self.cs137_gamma_abundance
 
-        # Activity in Bq (disintegrations/sec)
-        activity_bq = net_counts / (live_time * eff * br) if eff * br != 0 else 0
-        # Convert Bq to Ci (1 Ci = 3.7e10 Bq)
-        activity_ci = activity_bq / 3.7e10
+        # For each ROI:
+        for idx, roi in enumerate(self.rois):
+            roi_min, roi_max = roi['energy_min'], roi['energy_max']
+            eff, br = roi['efficiency'], roi['gamma_abundance']
+            label = roi["label"]
 
-        # Auto-scale the Ci output to μCi, mCi, Ci
-        if activity_ci < 1e-3:
-            activity_scaled = activity_ci * 1e6
-            activity_unit = 'μCi'
-        elif activity_ci < 1:
-            activity_scaled = activity_ci * 1e3
-            activity_unit = 'mCi'
-        else:
-            activity_scaled = activity_ci
-            activity_unit = 'Ci'
+            roi_indices = [i for i, e in enumerate(energies) if roi_min <= e <= roi_max]
+            if not roi_indices:
+                self.roi_results_vars[idx].set(f"{label}: No channels in ROI.")
+                continue
+            net_counts = sum([counts[i] for i in roi_indices])
+            live_time = float(self.entry_time.get())    # If you have actual measurement time per spectrum, use it here!
 
-        # Format output
-        self.cs137_results_var.set(
-            f'Cs-137 ROI {roi_min}-{roi_max} keV: '
-            f'Counts: {int(net_counts)}, '
-            f'Activity: {activity_bq:.1f} Bq, '
-            f'{activity_scaled:.3g} {activity_unit}'
-        )
-        
-    # --- Optional: Show/hide ROI overlay on the spectrum plot ---
-    def show_cs137_roi_overlay(self):
-        if not self.spectrum:
-            return
-        energies = [energy for count, energy in self.spectrum]
-        counts = [count for count, energy in self.spectrum]
-        roi_min, roi_max = self.cs137_roi
-        roi_indices = [i for i, e in enumerate(energies) if roi_min <= e <= roi_max]
-        if roi_indices:
-            start = roi_indices[0]
-            end = roi_indices[-1]
-            self.ax.bar(range(start, end+1), [counts[i] for i in range(start, end+1)],
-                        color='orange', alpha=0.4, width=1.0, label='Cs-137 ROI')
-            self.ax.legend()
-            self.canvas.draw()
+            activity_bq = net_counts / (live_time * eff * br) if eff * br != 0 else 0
+            activity_ci = activity_bq / 3.7e10
 
+            if activity_ci < 1e-3:
+                activity_scaled = activity_ci * 1e6
+                activity_unit = 'μCi'
+            elif activity_ci < 1:
+                activity_scaled = activity_ci * 1e3
+                activity_unit = 'mCi'
+            else:
+                activity_scaled = activity_ci
+                activity_unit = 'Ci'
+
+            # For U-235, add qualitative interpretation
+            if "U-235" in label:
+                # Very basic: If >5 counts in ROI it is likely present (for real use do stats/confidence)
+                presence = "Present" if net_counts > 5 else "Absent/Weak"
+                interpretation = " (Natural uranium likely)" if presence == "Present" else " (Depleted uranium likely)"
+                self.roi_results_vars[idx].set(
+                    f'{label}: Counts: {int(net_counts)}, Activity: {activity_bq:.1f} Bq, '
+                    f'{activity_scaled:.3g} {activity_unit} — 186 keV: {presence}{interpretation}'
+                )
+            else:
+                self.roi_results_vars[idx].set(
+                    f'{label}: Counts: {int(net_counts)}, Activity: {activity_bq:.1f} Bq, {activity_scaled:.3g} {activity_unit}'
+                )
 
     #========== AUTO GAMMA MUTEX LOGIC ==========
     def toggle_auto_gamma(self):
@@ -450,6 +496,7 @@ class GammaInterface:
 
     def timed_count_thread(self, minutes):
         total_secs = int(minutes*60)
+        self.clear_spectrum
         for t in range(total_secs,0,-1):
             if self.timed_acquire_abort.is_set():
                 self.master.after(0, self.label_timer.config, {"text": " "})
@@ -559,22 +606,114 @@ class GammaInterface:
             f.write(xmlstr)
         messagebox.showinfo("Export", f"N42 XML saved: {filename}")
 
-    def _draw_spectrum(self):
-        self.ax.cla()
-        self.ax.set_xlabel("Channel")
-        self.ax.set_ylabel("Count")
-        self.ax.set_title("Gamma Spectrum")
+    def analyze_selected_roi(self):
+        if not self.spectrum or len(self.spectrum) == 0:
+            self.roi_result_var.set("No spectrum loaded.")
+            return
+        sel_label = self.selected_roi.get()
+        for roi in self.rois:
+            if roi["label"] == sel_label:
+                break
+        else:
+            self.roi_result_var.set("Invalid ROI selection.")
+            return
+        # ROI properties
+        roi_min, roi_max = roi['energy_min'], roi['energy_max']
+        eff, br = roi['efficiency'], roi['gamma_abundance']
+        label = roi["label"]
+        energies = [energy for count, energy in self.spectrum]
+        counts = [count for count, energy in self.spectrum]
+        roi_indices = [i for i, e in enumerate(energies) if roi_min <= e <= roi_max]
+        if not roi_indices:
+            self.roi_result_var.set(f"{label}: No spectrum channels in ROI ({roi_min}-{roi_max} keV)")
+            return
+        net_counts = sum([counts[i] for i in roi_indices])
+        # If user ran a timed count, use that for live_time, else 1.0 s
+        try:
+            live_time = float(self.entry_time.get())
+            if live_time <= 0: live_time = 1.0
+        except Exception:
+            live_time = 1.0
+        activity_bq = net_counts / (live_time * eff * br) if eff*br > 0 else 0
+        activity_ci = activity_bq / 3.7e10
+        # Smart scaling
+        if activity_ci < 1e-3:
+            activity_scaled = activity_ci * 1e6
+            activity_unit = 'μCi'
+        elif activity_ci < 1:
+            activity_scaled = activity_ci * 1e3
+            activity_unit = 'mCi'
+        else:
+            activity_scaled = activity_ci
+            activity_unit = 'Ci'
+
+        # Special: U-235 qualitative result
+        if "U-235" in label:
+            presence = "Present" if net_counts > 5 else "Absent/Weak"
+            interpretation = " (Natural uranium likely)" if presence == "Present" else " (Depleted uranium likely)"
+            self.roi_result_var.set(
+                f"{label}: Counts {int(net_counts)}, Activity: {activity_bq:.1f} Bq, "
+                f"{activity_scaled:.3g} {activity_unit} — 186 keV: {presence}{interpretation}"
+            )
+        else:
+            self.roi_result_var.set(
+                f"{label}: Counts {int(net_counts)}, Activity: {activity_bq:.1f} Bq, {activity_scaled:.3g} {activity_unit} "
+                f"({roi_min}-{roi_max} keV)"
+            )
+
+    def show_selected_roi(self):
+        if not self.spectrum or len(self.spectrum) == 0:
+            self.status_var.set("No spectrum loaded to show ROI.")
+            return
+        sel_label = self.selected_roi.get()
+        for roi in self.rois:
+            if roi["label"] == sel_label:
+                break
+        else:
+            self.status_var.set("Invalid ROI selection.")
+            return
+        energies = [energy for count, energy in self.spectrum]
+        counts = [count for count, energy in self.spectrum]
+        roi_min, roi_max = roi['energy_min'], roi['energy_max']
+        roi_indices = [i for i, e in enumerate(energies) if roi_min <= e <= roi_max]
+        self._draw_spectrum(redraw=False)  # To clear old highlights, keep spectrum
+        if roi_indices:
+            start = roi_indices[0]
+            end = roi_indices[-1]
+            self.ax.bar(
+                range(start, end+1),
+                [counts[i] for i in range(start, end+1)],
+                color='orange', alpha=0.5, width=1.0, label=f'ROI: {sel_label}'
+            )
+            self.ax.legend()
+            self.canvas.draw()
+            self.status_var.set(f"{sel_label} ROI highlighted on plot.")
+        else:
+            self.status_var.set(f"No spectrum channels in {sel_label} ROI.")
+
+    def clear_roi_highlight(self):
+        self._draw_spectrum(redraw=True)
+        self.status_var.set("ROI highlight cleared from plot.")
+
+    def _draw_spectrum(self, redraw=True):
+        """
+        Draws the current spectrum, with x-axis as energy in keV, not channel.
+        All overlays and ROIs work as before.
+        """
+        if redraw:
+            self.ax.cla()
+            self.ax.set_xlabel("Energy (keV)")
+            self.ax.set_ylabel("Count")
+            self.ax.set_title("Gamma Spectrum")
         if self.spectrum:
-            channels = list(range(len(self.spectrum)))
-            counts = [count for count,energy in self.spectrum]
-            self.ax.bar(channels, counts, color='black', alpha=0.6, width=1.0)
-            # After plotting, do ROI calculation for Cs-137 if spectrum present
-            self._analyze_cs137_roi()
+            energies = [energy for count, energy in self.spectrum]
+            counts = [count for count, energy in self.spectrum]
+            self.ax.bar(energies, counts, color='black', alpha=0.6, width=(energies[1]-energies[0] if len(energies)>1 else 1))
         self.canvas.draw()
 
     def _draw_blank_spectrum(self):
         self.ax.cla()
-        self.ax.set_xlabel("Channel")
+        self.ax.set_xlabel("Energy (keV)")
         self.ax.set_ylabel("Count")
         self.ax.set_title("Gamma Spectrum")
         self.canvas.draw()
