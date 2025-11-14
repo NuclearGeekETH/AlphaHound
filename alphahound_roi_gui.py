@@ -51,7 +51,7 @@ class GammaInterface:
                 "label": "Cs-137",
                 "energy_min": 650,
                 "energy_max": 675,
-                "efficiency": 0.10,
+                "efficiency": 0.012,  # update to real efficiency if known
                 "gamma_abundance": 0.85,
             },
             {
